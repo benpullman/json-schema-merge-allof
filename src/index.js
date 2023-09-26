@@ -102,6 +102,8 @@ function callGroupResolver(complexKeywords, resolverName, schemas, mergeSchemas,
       throw new Error('No resolver found for ' + resolverName)
     }
 
+    schemas = schemas.filter(schema => !schema['if']);
+
     // extract all keywords from all the schemas that have one or more
     // then remove all undefined ones and not unique
     const extractedKeywordsOnly = schemas.map(schema => complexKeywords.reduce((all, key) => {
@@ -284,6 +286,27 @@ function merger(rootSchema, options, totalSchemas) {
     // there are no false and we don't need the true ones as they accept everything
     schemas = schemas.filter(isPlainObject)
 
+    const skipKeys = ['if','then','else']
+    
+    let [keepSchemas, skipSchemas] = schemas.reduce((all, schema) => {
+      let skipSchema = {}
+      for (let skipKey of skipKeys) {
+        if (schema[skipKey]) {
+          skipSchema[skipKey] = schema[skipKey]
+          delete schema[skipKey]
+        }
+      }
+      if (keys(schema).length !== 0) {
+        all[0].push(schema)
+      }
+      if (keys(skipSchema).length !== 0) {
+        all[1].push(skipSchema)
+      }
+      return all
+    }, [[],[]])
+
+    schemas = keepSchemas
+
     const allKeys = allUniqueKeys(schemas)
     if (options.deep && contains(allKeys, 'allOf')) {
       return merger({
@@ -323,6 +346,19 @@ function merger(rootSchema, options, totalSchemas) {
         }
       }
     })
+
+    //can merge the if-then-else statements, though limited gain from doing so
+    
+    //add back the if-then-else as originally written
+    if (skipSchemas.length == 1) {
+      //no need for allOf if there's only one value of if-then-else, 
+      for (const [key,value] of Object.entries(skipSchemas[0])) {
+        merged[key] = value
+      }
+    } else if (skipSchemas.length > 1) (
+      //cannot get rid of this allOf, there are two if-then-else statements
+      merged['allOf'] = skipSchemas
+    )
 
     return complexResolvers.reduce((all, [resolverKeyword, config], index) => ({
       ...all,
